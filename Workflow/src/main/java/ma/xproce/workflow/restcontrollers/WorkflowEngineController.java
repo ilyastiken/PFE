@@ -9,6 +9,7 @@ import ma.xproce.workflow.service.WorkflowEngineService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +29,6 @@ public class WorkflowEngineController {
     @Autowired
     private InstanceService instanceService;
 
-    // ✅ CORRECTION PRINCIPALE - Retourner DTOs au lieu d'entités
     @GetMapping
     public List<InstanceResponseDTO> getAllInstances() {
         logger.info("Récupération de toutes les instances via WorkflowEngine");
@@ -69,8 +69,6 @@ public class WorkflowEngineController {
             return ResponseEntity.badRequest().build();
         }
     }
-
-    // ✅ CORRIGÉ - Retourner DTOs de transitions
     @GetMapping("/{id}/transitions")
     public List<TransitionResponseDTO> getAvailableTransitions(@PathVariable Long id) {
         logger.info("Récupération des transitions disponibles pour instance {}", id);
@@ -83,7 +81,6 @@ public class WorkflowEngineController {
                 .toList();
     }
 
-    // ✅ CORRIGÉ - Retourner DTO
     @PostMapping("/{id}/transition")
     public ResponseEntity<InstanceResponseDTO> performTransition(
             @PathVariable Long id,
@@ -107,6 +104,36 @@ public class WorkflowEngineController {
         } catch (Exception e) {
             logger.error("Erreur lors de l'exécution de la transition", e);
             return ResponseEntity.badRequest().build();
+        }
+    }
+    @PostMapping("/execute-full")
+    public ResponseEntity<InstanceResponseDTO> executeFullWorkflow(
+            @RequestParam Long workflowId,
+            @RequestParam String businessKey,
+            @RequestParam String createdBy) {
+
+        try {
+            logger.info("🚀 Exécution automatique complète du workflow {} avec businessKey: {}", workflowId, businessKey);
+
+            // ✅ Appel de votre méthode simple et efficace
+            Instance instance = workflowEngineService.executeFullWorkflow(workflowId, businessKey, createdBy);
+
+            if (instance == null) {
+                logger.warn("❌ Échec de l'exécution automatique du workflow {}", workflowId);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            }
+
+            // Convertir en DTO pour le retour
+            InstanceResponseDTO dto = mapInstanceToDTO(instance);
+
+            logger.info("✅ Workflow {} exécuté avec succès - Statut final: {}",
+                    workflowId, dto.getCurrentStatutName());
+
+            return ResponseEntity.ok(dto);
+
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de l'exécution automatique du workflow {}: {}", workflowId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 

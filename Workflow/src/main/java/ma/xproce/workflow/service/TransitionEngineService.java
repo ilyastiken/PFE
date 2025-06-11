@@ -24,6 +24,8 @@ public class TransitionEngineService {
 
     @Autowired
     private TransitionHistoryRepository transitionHistoryRepository;
+    @Autowired
+    private TaskService taskService;
 
     @Transactional
     public Instance executeTransition(Long instanceId, Long transitionId, String executedBy) {
@@ -58,7 +60,16 @@ public class TransitionEngineService {
 
         // Sauvegarder l'historique
         transitionHistoryRepository.save(history);
-
+        
+        if (!"FINAL".equals(transition.getTargetStatut().getStatutType())) {
+            try {
+                taskService.createTaskForStatut(instance, transition.getTargetStatut(), executedBy);
+                System.out.println("✅ Tâche créée automatiquement pour statut: " + transition.getTargetStatut().getName());
+            } catch (Exception e) {
+                System.out.println("⚠️ Erreur création tâche: " + e.getMessage());
+                // On n'interrompt pas le processus principal
+            }
+        }
         // Sauvegarder l'instance mise à jour
         return instanceRepository.save(instance);
     }

@@ -31,4 +31,7 @@ public class Condition {
     @ManyToOne
     private Transition transition;
 
+    @ManyToOne
+    private Passerelle passerelle;
+
 }

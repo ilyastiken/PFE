@@ -1,12 +1,16 @@
 package ma.xproce.workflow.service;
 
 import ma.xproce.workflow.entities.*;
+import ma.xproce.workflow.repositories.WorkflowRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 @Service
 public class BpmnGeneratorService {
+    @Autowired
+    private WorkflowRepository workflowRepository;
 
     private Map<String, ElementPosition> elementPositions = new HashMap<>();
 
@@ -14,6 +18,7 @@ public class BpmnGeneratorService {
         if (workflow == null) {
             throw new IllegalArgumentException("Le workflow ne peut pas être null.");
         }
+
 
         elementPositions.clear();
 
@@ -43,7 +48,7 @@ public class BpmnGeneratorService {
 
         // Processus principal
         bpmn.append("  <bpmn:process id=\"").append(processId).append("\" ");
-        bpmn.append("name=\"").append(escapeXml(processName)).append("\" isExecutable=\"false\">\n");
+        bpmn.append("name=\"").append(escapeXml(processName)).append("\" isExecutable=\"true\">\n");
 
         // Événement de début
         bpmn.append("    <bpmn:startEvent id=\"start\" name=\"Start\" />\n");
@@ -63,6 +68,8 @@ public class BpmnGeneratorService {
         bpmn.append(generateDiagram(processId, statuts));
 
         bpmn.append("</bpmn:definitions>");
+        workflow.setBpmn(bpmn.toString());
+        workflowRepository.save(workflow);
 
         return bpmn.toString();
     }
@@ -91,7 +98,8 @@ public class BpmnGeneratorService {
         StringBuilder flows = new StringBuilder();
 
         if (statuts.isEmpty()) {
-            flows.append("    <bpmn:sequenceFlow id=\"flow_direct\" sourceRef=\"start\" targetRef=\"end\" />\n");
+            // ✅ CORRECTION: flow_0 au lieu de flow_direct
+            flows.append("    <bpmn:sequenceFlow id=\"flow_0\" sourceRef=\"start\" targetRef=\"end\" />\n");
             return flows.toString();
         }
 
@@ -191,6 +199,7 @@ public class BpmnGeneratorService {
         }
     }
 
+    // ✅ CORRECTION PRINCIPALE: generateDefaultSequentialFlows
     private void generateDefaultSequentialFlows(StringBuilder flows, List<Statut> statuts) {
         List<Statut> normalStatuts = statuts.stream()
                 .filter(s -> !"INITIAL".equals(s.getStatutType()) && !"FINAL".equals(s.getStatutType()))
@@ -198,20 +207,23 @@ public class BpmnGeneratorService {
                 .toList();
 
         if (!normalStatuts.isEmpty()) {
-            // Start -> First task
-            flows.append("    <bpmn:sequenceFlow id=\"flow_start\" sourceRef=\"start\" targetRef=\"task_")
+            // Start -> First task (flow_0)
+            flows.append("    <bpmn:sequenceFlow id=\"flow_0\" sourceRef=\"start\" targetRef=\"task_")
                     .append(normalStatuts.get(0).getId()).append("\" />\n");
 
-            // Task to task connections
+            // Task to task connections (flow_1, flow_2, etc.)
             for (int i = 0; i < normalStatuts.size() - 1; i++) {
-                flows.append("    <bpmn:sequenceFlow id=\"flow_").append(i)
+                int flowIndex = i + 1; // flow_1, flow_2, etc.
+                flows.append("    <bpmn:sequenceFlow id=\"flow_").append(flowIndex)
                         .append("\" sourceRef=\"task_").append(normalStatuts.get(i).getId())
                         .append("\" targetRef=\"task_").append(normalStatuts.get(i + 1).getId()).append("\" />\n");
             }
 
-            // Last task -> End
-            flows.append("    <bpmn:sequenceFlow id=\"flow_end\" sourceRef=\"task_")
-                    .append(normalStatuts.get(normalStatuts.size() - 1).getId()).append("\" targetRef=\"end\" />\n");
+            // Last task -> End (flow_X)
+            int lastFlowIndex = normalStatuts.size(); // Si 2 tâches, alors flow_2
+            flows.append("    <bpmn:sequenceFlow id=\"flow_").append(lastFlowIndex)
+                    .append("\" sourceRef=\"task_").append(normalStatuts.get(normalStatuts.size() - 1).getId())
+                    .append("\" targetRef=\"end\" />\n");
         }
     }
 
@@ -260,6 +272,7 @@ public class BpmnGeneratorService {
         diagram.append("      </bpmndi:BPMNShape>\n");
     }
 
+    // ✅ CORRECTION PRINCIPALE: generateEdges
     private void generateEdges(StringBuilder diagram, List<Statut> statuts) {
         List<Statut> taskStatuts = statuts.stream()
                 .filter(s -> !"INITIAL".equals(s.getStatutType()) && !"FINAL".equals(s.getStatutType()))
@@ -271,23 +284,24 @@ public class BpmnGeneratorService {
             return;
         }
 
-        // Start -> First task
+        // Start -> First task (flow_0_di au lieu de flow_start_di)
         ElementPosition startPos = elementPositions.get("start");
         ElementPosition firstTaskPos = elementPositions.get("task_" + taskStatuts.get(0).getId());
 
-        diagram.append("      <bpmndi:BPMNEdge id=\"flow_start_di\" bpmnElement=\"flow_start\">\n");
+        diagram.append("      <bpmndi:BPMNEdge id=\"flow_0_di\" bpmnElement=\"flow_0\">\n");
         diagram.append("        <di:waypoint x=\"").append(startPos.x + 36).append("\" y=\"")
                 .append(startPos.y + 18).append("\" />\n");
         diagram.append("        <di:waypoint x=\"").append(firstTaskPos.x).append("\" y=\"")
                 .append(firstTaskPos.y + 40).append("\" />\n");
         diagram.append("      </bpmndi:BPMNEdge>\n");
 
-        // Task to task connections
+        // Task to task connections (flow_1_di, flow_2_di, etc.)
         for (int i = 0; i < taskStatuts.size() - 1; i++) {
             ElementPosition currentPos = elementPositions.get("task_" + taskStatuts.get(i).getId());
             ElementPosition nextPos = elementPositions.get("task_" + taskStatuts.get(i + 1).getId());
 
-            diagram.append("      <bpmndi:BPMNEdge id=\"flow_").append(i).append("_di\" bpmnElement=\"flow_").append(i).append("\">\n");
+            int flowIndex = i + 1; // flow_1, flow_2, etc.
+            diagram.append("      <bpmndi:BPMNEdge id=\"flow_").append(flowIndex).append("_di\" bpmnElement=\"flow_").append(flowIndex).append("\">\n");
             diagram.append("        <di:waypoint x=\"").append(currentPos.x + 100).append("\" y=\"")
                     .append(currentPos.y + 40).append("\" />\n");
             diagram.append("        <di:waypoint x=\"").append(nextPos.x).append("\" y=\"")
@@ -295,11 +309,12 @@ public class BpmnGeneratorService {
             diagram.append("      </bpmndi:BPMNEdge>\n");
         }
 
-        // Last task -> End
+        // Last task -> End (flow_X_di au lieu de flow_end_di)
         ElementPosition lastTaskPos = elementPositions.get("task_" + taskStatuts.get(taskStatuts.size() - 1).getId());
         ElementPosition endPos = elementPositions.get("end");
 
-        diagram.append("      <bpmndi:BPMNEdge id=\"flow_end_di\" bpmnElement=\"flow_end\">\n");
+        int lastFlowIndex = taskStatuts.size(); // Si 2 tâches, alors flow_2
+        diagram.append("      <bpmndi:BPMNEdge id=\"flow_").append(lastFlowIndex).append("_di\" bpmnElement=\"flow_").append(lastFlowIndex).append("\">\n");
         diagram.append("        <di:waypoint x=\"").append(lastTaskPos.x + 100).append("\" y=\"")
                 .append(lastTaskPos.y + 40).append("\" />\n");
         diagram.append("        <di:waypoint x=\"").append(endPos.x).append("\" y=\"")
@@ -307,11 +322,13 @@ public class BpmnGeneratorService {
         diagram.append("      </bpmndi:BPMNEdge>\n");
     }
 
+    // ✅ CORRECTION: generateDirectEdge
     private void generateDirectEdge(StringBuilder diagram) {
         ElementPosition startPos = elementPositions.get("start");
         ElementPosition endPos = elementPositions.get("end");
 
-        diagram.append("      <bpmndi:BPMNEdge id=\"flow_direct_di\" bpmnElement=\"flow_direct\">\n");
+        // flow_0_di au lieu de flow_direct_di
+        diagram.append("      <bpmndi:BPMNEdge id=\"flow_0_di\" bpmnElement=\"flow_0\">\n");
         diagram.append("        <di:waypoint x=\"").append(startPos.x + 36).append("\" y=\"")
                 .append(startPos.y + 18).append("\" />\n");
         diagram.append("        <di:waypoint x=\"").append(endPos.x).append("\" y=\"")

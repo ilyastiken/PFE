@@ -1,7 +1,10 @@
 package ma.xproce.workflow.service;
 
+import jakarta.transaction.Transactional;
 import ma.xproce.workflow.entities.*;
 import ma.xproce.workflow.repositories.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +28,9 @@ public class WorkflowEngineService {
 
     @Autowired
     private TransitionHistoryRepository transitionHistoryRepository;
+
+    private static final Logger logger = LoggerFactory.getLogger(WorkflowEngineService.class);
+
 
     public Instance startWorkflow(Long workflowId, String businessKey, String createdBy) {
         // Récupérer le workflow
@@ -113,5 +119,49 @@ public class WorkflowEngineService {
 
         // Trouver toutes les transitions qui partent de l'état actuel
         return transitionRepository.findBySourceStatutId(instance.getCurrentStatut().getId());
+    }
+    @Transactional
+    public Instance executeFullWorkflow(Long workflowId, String businessKey, String createdBy) {
+        try {
+            // 1. Créer une instance
+            Instance instance = startWorkflow(workflowId, businessKey, createdBy);
+            if (instance == null) {
+                return null;
+            }
+
+            // ✅ AMÉLIORATION 1: Protection contre boucles infinies (simple)
+            int stepCount = 0;
+            int maxSteps = 100; // Limite raisonnable
+
+            // 2. Exécuter toutes les transitions disponibles en boucle
+            while (!"FINAL".equals(instance.getCurrentStatut().getStatutType()) && stepCount < maxSteps) {
+                List<Transition> transitions = getAvailableTransitions(instance.getId());
+                if (transitions.isEmpty()) {
+                    break; // Aucune transition possible
+                }
+
+                // On suppose qu'on prend la première transition disponible
+                Transition next = transitions.get(0);
+
+                // ✅ AMÉLIORATION 2: Vérification simple
+                if (next == null) {
+                    break;
+                }
+
+                instance = performTransition(instance.getId(), next.getId(), createdBy);
+                stepCount++;
+            }
+
+            // ✅ AMÉLIORATION 3: Log simple si ça ne se termine pas
+            if (stepCount >= maxSteps) {
+                logger.warn("Workflow {} arrêté après {} étapes - possible boucle infinie", workflowId, maxSteps);
+            }
+
+            return instance;
+
+        } catch (Exception e) {
+            logger.error("Erreur exécution automatique workflow {}: {}", workflowId, e.getMessage());
+            return null;
+        }
     }
 }

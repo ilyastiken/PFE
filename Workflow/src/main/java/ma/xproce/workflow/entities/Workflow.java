@@ -28,6 +28,7 @@ public class Workflow {
     private String createdBy;
     private LocalDateTime creationDate;
     private LocalDateTime modificationDate;
+    private String bpmn;
 
     @OneToMany(mappedBy = "workflow", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonManagedReference("workflow-statuts")
